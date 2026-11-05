@@ -53,6 +53,7 @@ make TARGET=e3q-S928USQS6DZF2 ANDROID_NDK_HOME=/path/to/android-ndk
 make TARGET=e2s-S926BXXUEDZDR ANDROID_NDK_HOME=/path/to/android-ndk
 make TARGET=essi-S721NKSSCDZF3 ANDROID_NDK_HOME=/path/to/android-ndk
 make TARGET=e1s-S921BXXSFDZF2 ANDROID_NDK_HOME=/path/to/android-ndk
+make TARGET=e1s-S921BXXUHEZIF ANDROID_NDK_HOME=/path/to/android-ndk release
 make TARGET=a15-A155NKSS6BYH1 ANDROID_NDK_HOME=/path/to/android-ndk
 make TARGET=essi-A566EXXSCCZG6 ANDROID_NDK_HOME=/path/to/android-ndk
 make TARGET=a36xq-A366WVLS3AYG1 ANDROID_NDK_HOME=/path/to/android-ndk
@@ -99,5 +100,9 @@ The SM-A536E GZG3 device validation is in
 [`docs/SM-A536E-A536EXXSNGZG3.md`](docs/SM-A536E-A536EXXSNGZG3.md).
 The SM-S9280 China (CHC) DZF2 port and validation record is in
 [`docs/SM-S9280-S9280ZCS6DZF2.md`](docs/SM-S9280-S9280ZCS6DZF2.md).
+The S921B HEZIF (Android 17, 6.1.162) offline port record is in
+[`docs/SM-S921B-S921BXXUHEZIF.md`](docs/SM-S921B-S921BXXUHEZIF.md); it is
+hardware-untested and includes the inherited-geometry and unverified physical
+load notes.
 
 Use only on devices you own or are explicitly authorized to test.
