@@ -1,2 +1,18 @@
 /build/
 /diagnostics/
+
+# Firmware and extracted images are build inputs, never repository content.
+/fw/
+/boot/
+firmware/
+*.img
+*.img.lz4
+*.lz4
+*.tar.md5
+*.enc4
+*.part
+kernel.raw
+kernel
+vmlinux*
+System.map
+Module.symvers

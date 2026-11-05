@@ -232,7 +232,12 @@ region is an alternating `0xc0`/`0x80` data table with a dispatcher at
 `0x6b0d88`, not the kernel handoff. A DTB-magic scan of `sboot.bin`,
 `dtbo.img`, `vendor_boot.img`, `recovery.img`, `init_boot.img` and `vbmeta.img`
 returned no hits, so the DRAM base cannot be cross-checked from a shipped DTB
-either.
+either. This was confirmed a second way: `magiskboot unpack` of
+`vendor_boot.img.lz4` yields exactly one DTB (434,020 bytes), whose
+`/chosen/bootargs` matches the string quoted under *Mitigations* and whose
+`linux,initrd-start` / `linux,initrd-end` properties carry no value, and which
+contains no `memory@` node at all — the Samsung bootloader installs the memory
+node at runtime, so no shipped image of this build states the DRAM base.
 
 The profile therefore keeps the inherited value and records it as unverified:
 
@@ -397,10 +402,24 @@ bootargs string is recorded in the Phase 1 results file of the port workspace.
 
 ## Cleanup and validation state
 
-The 38,832,640-byte raw kernel, `vmlinux.full.elf`, `vmlinux.btf`, `System.map`
-and `config.txt` are retained locally for retries and for the profile verifier.
-The 17.6 GB firmware ZIP and the AP/BL members were removed after hashing; the
-hashes above are the provenance record.
+The 38,832,640-byte raw kernel, `vmlinux.elf`, `vmlinux.full.elf`,
+`vmlinux.btf`, `System.map` and `config.txt` are retained locally for retries
+and for the profile verifier, together with the six `.lz4` partition members
+streamed out of the AP tar (`boot`, `vendor_boot`, `init_boot`, `dtbo`,
+`recovery`, `vbmeta`) and the unpacked 67,108,864-byte `boot.img`. The AP and BL
+tar members themselves were streamed and never materialised on disk.
+
+Two artifacts live outside the repository, in the port workspace, so that no
+firmware is committed: the extracted-image directory and the 18,603,188,503-byte
+decrypted firmware archive `SM-S921B_4_20260920110051_mhgqcf3ybe_fac.zip`. The
+hashes above are the provenance record; the archive is kept only so that the
+other partition members can be re-hashed without re-downloading 18.6 GB.
+
+A clean rebuild from the committed profile reproduces the published artifact
+byte for byte: `rm -rf build/e1s-S921BXXUHEZIF && make TARGET=e1s-S921BXXUHEZIF
+ANDROID_NDK_HOME=<ndk-r29> release` re-links the payload under the size gate,
+`truncate -s 104128`, and yields SHA-256 `FD8D72F4...B7FFE` for both the
+in-build `.release.so` and `artifacts/e1s-S921BXXUHEZIF/cve-2026-43499-app.so`.
 
 No on-device run has been performed for this build. The exploit has not been
 executed, the inherited physical-load and geometry constants are unverified,
