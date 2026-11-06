@@ -375,6 +375,15 @@ for the release size gate. The fixed-size result is published at
 `artifacts/e1s-S921BXXUHEZIF/cve-2026-43499-app.so`: 104,128 bytes, SHA-256
 `FD8D72F406E03980E05EAFD4B90C15212B624A87AAF88371680240E3E89B7FFE`.
 
+The root helper that the payload's usermode-helper path executes is published
+beside it as `artifacts/e1s-S921BXXUHEZIF/cve-2026-43499-root`: 27,072 bytes,
+SHA-256 `54894E9BFA80FC36CFA03BD4EC4279E1D56ECCC9719C9EE395B64FFD6792866B`.
+It needs no porting work at all: `src/su_daemon.c` includes no target header and
+references no offset macro, and the `$(ROOT_HELPER)` rule in the Makefile has no
+`$(TARGET_HEADER)` prerequisite, so the same source compiles to the same
+executable for every target on a given NDK. Both files are pushed to
+`/data/local/tmp/` and made executable before the device phase.
+
 ## KernelSU compatibility
 
 HEZIF reports vermagic `6.1.162-android14-11 SMP preempt mod_unload modversions
