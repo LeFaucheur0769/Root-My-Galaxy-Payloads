@@ -16,3 +16,6 @@ kernel
 vmlinux*
 System.map
 Module.symvers
+
+__pycache__/
+*.pyc

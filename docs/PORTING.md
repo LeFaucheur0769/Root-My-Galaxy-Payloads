@@ -268,26 +268,37 @@ The validation above is implemented in this repository. The full recovery run
 for the `e1s-S921BXXUHEZIF` profile was:
 
 ```sh
-tools/carve_btf.py kernel -o vmlinux.btf          # full header, bounds and NUL-byte validation
+tools/carve_btf.py kernel -o vmlinux.btf     # header, bounds and NUL-byte validation
 vmlinux-to-elf kernel vmlinux.elf
 llvm-objcopy --add-section .BTF=vmlinux.btf vmlinux.elf vmlinux.full.elf
-llvm-nm --numeric-sort vmlinux.full.elf > System.map
 extract-ikconfig kernel > config.txt
 
 tools/extract_offsets.py \
   --vmlinux vmlinux.full.elf --format btf \
   --map System.map --symbols \
-  --header offsets.h                              # 77/77 profile offsets populated
+  --header offsets.h
 ```
 
 `carve_btf.py --selftest` checks the header validator against a known-good blob
 and `--list` reports every candidate BTF interval in the image.
-`extract_offsets.py` resolves each struct member and symbol the profile needs,
-writes the ready-to-paste macro header, and exits with status 4 rather than
-emitting a header containing an unresolved member. `pahole` (the `dwarves`
-package) is required. Tools that are not vendored here: `samloader-rs` for FUS
-downloads, `magiskboot` for `boot.img` unpacking, `vmlinux-to-elf`, `pahole`,
-and the LLVM binutils.
+
+In that command, `--map` is an output. It writes the whole symbol table of the
+reconstructed ELF as `<addr> <name>` rows — 115,739 rows on this build, the same
+set `llvm-nm --numeric-sort` lists with type letters — and that file is what
+`verify_target_profile.py` consumes. `--symbols` prints the addresses for the
+symbol macros the profile needs, which is where the `*_OFF` values come from;
+the `--header` file carries the struct-member offsets only, 77 of them here.
+
+The symbol stage reads the ELF through `pyelftools`. When that package is
+missing the tool exits with status 2 and writes no header, instead of reporting
+a clean run while silently dropping every symbol address; install it with
+`pip install pyelftools`. Exit codes are 0 when everything requested resolved,
+2 on bad invocation or a failed symbol stage, 3 when no debug format could be
+read, and 4 when a member is unresolved, in which case a partial header is
+still written. `pahole` (the `dwarves` package) is required for the struct
+stage. Tools not vendored here: `samloader-rs` for FUS downloads, `magiskboot`
+for `boot.img` and `vendor_boot.img` unpacking, `vmlinux-to-elf`, `pahole`, and
+the LLVM binutils.
 
 ## 4. Confirm physical load addresses
 

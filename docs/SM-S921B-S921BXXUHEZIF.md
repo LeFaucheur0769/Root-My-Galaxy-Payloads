@@ -110,6 +110,32 @@ bytes); its little-endian header starts with `9f eb 01 00 18 00 00 00`, and
 The merged ELF (`vmlinux.elf` plus an appended `.BTF` section) is what
 `tools/verify_target_profile.py` reads.
 
+The commands that produced those artifacts, and the checks that accepted the
+profile, are below. `IMG` is the scratch directory holding the extracted image;
+firmware and extracted images never enter the repository, as `.gitignore`
+enforces.
+
+```sh
+IMG=../boot           # kernel, boot.img, the six .lz4 members: repository-excluded inputs
+
+tools/carve_btf.py "$IMG/kernel" -o "$IMG/vmlinux.btf"
+vmlinux-to-elf "$IMG/kernel" "$IMG/vmlinux.elf"
+llvm-objcopy --add-section .BTF="$IMG/vmlinux.btf" "$IMG/vmlinux.elf" "$IMG/vmlinux.full.elf"
+extract-ikconfig "$IMG/kernel" > "$IMG/config.txt"
+
+tools/extract_offsets.py --vmlinux "$IMG/vmlinux.full.elf" --format btf \
+  --map "$IMG/System.map" --symbols --header offsets.h    # 77/77 struct offsets
+
+tools/verify_target_profile.py e1s-S921BXXUHEZIF \
+  "$IMG/vmlinux.full.elf" "$IMG/System.map" "$IMG/kernel"  # 67/67 checks passed
+```
+
+`carve_btf.py`, `extract_offsets.py` and `sboot_disasm.py` are vendored under
+`tools/` in this repository, so the whole stage is reproducible from the tree.
+`--map` writes `System.map`; the symbol stage needs `pyelftools` and the tool
+exits 2 rather than dropping symbol addresses silently. See
+[`PORTING.md`](PORTING.md) section 3 for the full stage contract.
+
 Required offsets from the recovered HEZIF ELF are:
 
 | Macro/use | Symbol or derivation | Offset |
