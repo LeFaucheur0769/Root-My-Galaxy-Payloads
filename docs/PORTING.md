@@ -262,6 +262,33 @@ page.slab_cache = 0x18
 page.page_type = 0x30
 ```
 
+### Scripts used for this stage
+
+The validation above is implemented in this repository. The full recovery run
+for the `e1s-S921BXXUHEZIF` profile was:
+
+```sh
+tools/carve_btf.py kernel -o vmlinux.btf          # full header, bounds and NUL-byte validation
+vmlinux-to-elf kernel vmlinux.elf
+llvm-objcopy --add-section .BTF=vmlinux.btf vmlinux.elf vmlinux.full.elf
+llvm-nm --numeric-sort vmlinux.full.elf > System.map
+extract-ikconfig kernel > config.txt
+
+tools/extract_offsets.py \
+  --vmlinux vmlinux.full.elf --format btf \
+  --map System.map --symbols \
+  --header offsets.h                              # 77/77 profile offsets populated
+```
+
+`carve_btf.py --selftest` checks the header validator against a known-good blob
+and `--list` reports every candidate BTF interval in the image.
+`extract_offsets.py` resolves each struct member and symbol the profile needs,
+writes the ready-to-paste macro header, and exits with status 4 rather than
+emitting a header containing an unresolved member. `pahole` (the `dwarves`
+package) is required. Tools that are not vendored here: `samloader-rs` for FUS
+downloads, `magiskboot` for `boot.img` unpacking, `vmlinux-to-elf`, `pahole`,
+and the LLVM binutils.
+
 ## 4. Confirm physical load addresses
 
 Do not copy the S25U `P0_KERNEL_PHYS_LOAD` value. Extract the BL archive and
@@ -285,6 +312,29 @@ add  x19, x8, x9
 ...
 blr  x19
 ```
+
+### When the shipped images do not pin the base down
+
+That branch proves where the kernel image is loaded. It does not by itself prove
+the physical alias the payload reads through, and on some builds neither does the
+rest of the firmware archive. `e1s-S921BXXUHEZIF` is such a build: `magiskboot
+unpack` of `vendor_boot.img.lz4` yields exactly one DTB (434,020 bytes), its
+`/chosen/bootargs` matches the recorded command line, `linux,initrd-start` and
+`linux,initrd-end` are empty, and the tree contains no `memory@` node at all, so
+the DRAM base cannot be read from any shipped image. `sboot.bin` disassembly
+provides the same branch evidence and no memory node either.
+
+Keep the family default `0x80000000` in that situation and mark the value
+unconfirmed rather than inventing one: a wrong base makes every fingerprint row
+miss, which fails the attempt closed instead of corrupting memory. The first live
+run is the measurement point. If all 32 fingerprint rows miss, test the alternate
+candidates `0x40000000` and `0xa0000000` before touching any other knob, and read
+the live `memory@` node from `/proc/device-tree/` as soon as the payload has
+produced a root shell. Note that `P0_KERNEL_PHYS_DELTA`, the difference between
+the two macros, is what the payload actually consumes; on builds whose physical
+base differs from their virtual load base (for example
+`a36xq: 0x80000000 / 0xa8000000`, `a15: 0x40000000 / 0xa8000000`) that delta is
+non-zero and build-specific.
 
 ## 5. Derive slide data and P0 fingerprints
 
@@ -409,6 +459,28 @@ module build, perform all of these checks:
    example, `android14-6.1_kernelsu.ko` or
    `android12-5.10_kernelsu.ko`), and rebuild `ksud`;
 6. name both published files with their kernel/KMI version.
+
+Two details decide whether the result is loadable and manager-compatible, and
+both are easy to miss:
+
+- The DDK image generates `UTS_RELEASE` `6.1.166-dirty`. Because Samsung kernels
+  ship `CONFIG_MODULE_FORCE_LOAD=n`, the module is rejected unless that string
+  is rewritten to the target's exact release in
+  `$KDIR/include/generated/utsrelease.h` and
+  `$KDIR/include/config/kernel.release` before `make`. The strings used per
+  target are tabulated in [`../kernelsu/README.md`](../kernelsu/README.md).
+- Build from a copy of the patched tree that has no `.git` directory.
+  `kernel/Kbuild` sets `KSU_VERSION = 30000 + git commit count` whenever it can
+  resolve a repository root and otherwise selects the fallback `KSU_VERSION =
+  32525`; the fallback is the version code KernelSU Manager reports for every
+  published Samsung build here.
+
+The Samsung patch introduces no target-specific struct offsets.
+`get_task_creds`, `set_task_creds`, `prepare_ro_creds`, `kdp_assign_pgd`,
+`inc_rlimit_ucounts` and `dec_rlimit_ucounts` are resolved by name at module
+init through `ksu_resolve_symbol_for_functable_hook()`. Porting a new target
+therefore means confirming that those names are present in the target symbol
+table, not re-deriving field offsets for them.
 
 For this target, the embedded and standalone KO reports:
 

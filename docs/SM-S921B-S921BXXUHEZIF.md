@@ -352,26 +352,102 @@ for the release size gate. The fixed-size result is published at
 ## KernelSU compatibility
 
 HEZIF reports vermagic `6.1.162-android14-11 SMP preempt mod_unload modversions
-aarch64`. The current Samsung-patched KernelSU builds in `kernelsu/` are built
-for the 6.1.157 e1s kernels and do not match this release string, so they are
-not yet published for this target.
+aarch64`. The Samsung-patched KernelSU builds published for the 6.1.157 e1s
+kernels do not match that string and cannot be loaded here because
+`CONFIG_MODULE_FORCE_LOAD=n`. A module built for this exact release now exists;
+the build record is below.
 
 The pre-existing e1s KernelSU `.ko` was audited against the HEZIF symbol table
-with `tools/audit_module_against_target.py ... --manual-relocation`, because
-the shipped module has an empty `__versions` section and cannot be
-CRC-matched. `tools/extract_target_symvers.py` produced 15,469 CRCs from the
-HEZIF image; the audit reports 202 undefined imports, zero missing from the
-target symbol table, 47 imports resolved only through kallsyms (present in the
-target but outside its export table, which the Samsung module loader accepts),
-zero target CRC mismatches, and exit status 0. It does not import
+with `kernelsu/tools/audit_module_against_target.py ... --manual-relocation`,
+because the shipped module has an empty `__versions` section and cannot be
+CRC-matched. `kernelsu/tools/extract_target_symvers.py` produced 15,469 CRCs
+from the HEZIF image; the audit reports 202 undefined imports, zero missing from
+the target symbol table, 47 imports resolved only through kallsyms (present in
+the target but outside its export table, which the Samsung module loader
+accepts), zero target CRC mismatches, and exit status 0. It does not import
 `stop_machine`, so the no-patch-text path stays available.
 
-A dedicated build for `6.1.162-android14-11` (KernelSU v3.2.5 plus the Samsung
-KDP/RKP/defex patch, `CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y`, matching DDK) or a
-`ksud` late-load with manual relocation is required before KernelSU is
-announced for this firmware. The Samsung KDP selector offsets documented for
-ZF3 (`0x108`/`0x118`/`0x130`) do not match HEZIF BTF (`0x310`/`0x318`/`0x348`)
-and must be re-derived before any patch.
+A dedicated build for `6.1.162-android14-11` is required before KernelSU is
+announced for this firmware, and it has been run. The source is KernelSU
+`v3.2.5` — upstream commit
+`b0bc817b4e966aa6aa830834eaf6ef765d821d40`, which is exactly what the tag
+`v3.2.5` resolves to — plus
+`patches/KernelSU-v3.2.5-samsung-kdp-rkp-defex.patch`, which passes
+`git apply --check` against that tag without fuzz, so the source provenance of
+the existing e1s DZE1 module is reproducible.
+
+No per-build struct offsets need re-deriving for this component. The patch
+introduces no target-specific offsets — its only size constants are
+`sizeof(*work)` and `sizeof(uid_t)` — because every Samsung-specific routine is
+resolved by name at module init through
+`ksu_resolve_symbol_for_functable_hook()`. All six names it resolves are
+present in the HEZIF symbol table:
+
+| resolved name | HEZIF address |
+| --- | --- |
+| `get_task_creds` | `ffffffc008704f08` |
+| `set_task_creds` | `ffffffc008705094` |
+| `prepare_ro_creds` | `ffffffc008d9d378` |
+| `kdp_assign_pgd` | `ffffffc008d9d804` |
+| `inc_rlimit_ucounts` | `ffffffc0080ea2ec` |
+| `dec_rlimit_ucounts` | `ffffffc0080ea37c` |
+
+The recipe in `kernelsu/README.md` applies unchanged; the only
+target-specific edit is rewriting the DDK's generated release string from
+`6.1.166-dirty` to `6.1.162-android14-11` in
+`$KDIR/include/generated/utsrelease.h` and
+`$KDIR/include/config/kernel.release`, which is what `CONFIG_MODULE_FORCE_LOAD=n`
+demands. The build was executed as:
+
+```sh
+rsync -a --exclude .git KernelSU/ buildsrc/   # no .git on purpose, see below
+docker run --rm -v "$PWD/buildsrc:/workspace" -v "$PWD/boot:/target:ro" \
+  -w /workspace/kernel ghcr.io/ylarod/ddk-min:android14-6.1-20260313 bash -lc '
+    sed -i "s/6.1.166-dirty/6.1.162-android14-11/g" \
+      "$KDIR/include/generated/utsrelease.h" \
+      "$KDIR/include/config/kernel.release"
+    CONFIG_KSU=m \
+    CONFIG_KSU_SAMSUNG_KDP=y CONFIG_KSU_SAMSUNG_RKP=y \
+    CONFIG_KSU_SAMSUNG_DEFEX=y CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y \
+    CC=clang make -j"$(nproc)"
+    ./check_symbol ./kernelsu.ko /target/vmlinux.full.elf
+  '
+llvm-strip -d kernelsu.ko
+```
+
+The tree is copied without `.git` deliberately. Kbuild computes
+`KSU_VERSION = 30000 + git commit count` when a repository is present and
+otherwise uses the fallback `32525`, which is the version code the published
+Samsung modules report to KernelSU Manager. The build emitted the expected
+`KSU_GIT_VERSION not defined` warning plus
+`-- KernelSU fallback version: 32525`, and finished with exit status 0 and no
+other diagnostics:
+
+```text
+vermagic: 6.1.162-android14-11 SMP preempt mod_unload modversions aarch64
+kernel/check_symbol kernelsu.ko <HEZIF vmlinux.full.elf>  -> exit 0
+
+kernelsu/android14-6.1_kernelsu-e1s-S921BXXUHEZIF-kdp.ko
+size: 398336
+SHA-256: 13FD97A8D303C63C8A3DF5D70AD93F8FD311AEC927A1DCDEF1C3C004D492FD2F
+```
+
+`llvm-strip -d` removes debug sections only: `.symtab`, `.strtab` and `.BTF` are
+retained for the manual loader and `__versions` is empty. The
+manual-relocation audit of this module against the HEZIF `vmlinux.full.elf` and
+the 15,469 CRCs extracted from the same image reports 202 undefined imports,
+zero missing from the target symbol table, 47 imports available only through
+kallsyms, zero module version entries, zero target CRC mismatches, no
+`stop_machine` import, and exit status 0 — the same contract the device-tested
+e1s DZE1 module satisfies. `ksu_samsung_kdp_init`, `ksu_samsung_kdp_put_cred`,
+`ksu_samsung_defex_sync_current` and `defex_enforce_kprobe` are present in the
+module symbol table, confirming the no-patch-text configuration.
+
+The paired `ksud-e1s-S921BXXUHEZIF-kdp` is intentionally not published yet.
+Late-load can only run after this payload has already produced a root shell, so
+the `ksud` pair is cut once the module load is confirmed on HEZIF hardware.
+Module load on this firmware is untested, and KernelSU is not announced for this
+build.
 
 ## Mitigations
 

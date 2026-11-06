@@ -24,6 +24,7 @@ between KMIs.
 | `ksud-e1s-S921NKSSFDZF3-kdp` | Same exact S921N build | `android14-6.1` | Device-tested late-load binary embedding the S921N no-patch-text module |
 | `android14-6.1_kernelsu-e1s-S921BXXSFDZE1-kdp.ko` | `SM-S921B`, `S921BXXSFDZE1` | `android14-6.1` | Exact E1S no-patch-text module with target `vermagic`, audited for manual relocation |
 | `ksud-e1s-S921BXXSFDZE1-kdp` | Same exact E1S build | `android14-6.1` | Device-tested late-load binary embedding the E1S no-patch-text module |
+| `android14-6.1_kernelsu-e1s-S921BXXUHEZIF-kdp.ko` | `SM-S921B`, `S921BXXUHEZIF` | `android14-6.1` | Exact HEZIF no-patch-text module with target `vermagic`, audited for manual relocation; module load on hardware untested, so the `ksud` pair is not published yet |
 | `android14-6.1_kernelsu-samsung-kdp.ko` | `SM-S721N` `S721NKSSCDZF3`; `SM-S921B` `S921BXXSFDZF2` | `android14-6.1` | Standalone Samsung KDP/RKP/DEFEX module with target `vermagic` |
 | `ksud-samsung-android14-6.1-kdp` | Same verified 6.1 targets | `android14-6.1` | Late-load binary embedding the 6.1 module |
 | `android12-5.10_kernelsu-samsung-kdp.ko` | `SM-A155N` `A155NKSS6BYH1` | `android12-5.10` | Standalone Samsung KDP/RKP/DEFEX module built against the exact A15 kernel |
@@ -59,7 +60,12 @@ static-audited, and device-tested: late-load reports version code `32525`, and
 the loader runs in `u:r:ksu:s0`. The E1S pair is tied to the S921B DZE1 release,
 static-audited against the recovered DZE1 `vmlinux` (202 undefined symbols, zero
 missing, zero CRC mismatches, no `stop_machine`), and device-tested: the
-no-patch-text module late-loads cleanly and reports KernelSU active. On the same
+no-patch-text module late-loads cleanly and reports KernelSU active. The HEZIF
+module above is exact-release for `6.1.162-android14-11`, statically audited
+against the recovered HEZIF `vmlinux.full.elf` (202 undefined imports, zero
+missing, zero CRC mismatches, no `stop_machine`), and is hardware-untested; its
+`ksud` pair is cut only after the HEZIF late-load is confirmed, because
+late-load requires the root that the exploit payload provides first. On the same
 Exynos 2400 the generic 6.1 module panics in Samsung/Exynos EL2 while attempting
 live text patching, so DZE1 uses the no-patch-text build. The A56 CCZG6 pair is
 exact-release,
@@ -176,6 +182,24 @@ The DDK image defaults to `6.1.166-dirty`, but the target has
 ```text
 vermagic: 6.1.157-android14-11 SMP preempt mod_unload modversions aarch64
 ```
+
+The release strings written into those two files for the exact-release 6.1
+modules are:
+
+| module | release string |
+| --- | --- |
+| `android14-6.1_kernelsu-e1s-S921BXXSFDZE1-kdp.ko` | `6.1.157-android14-11` |
+| `android14-6.1_kernelsu-e1s-S921BXXUHEZIF-kdp.ko` | `6.1.162-android14-11` |
+| `android14-6.1_kernelsu-e3q-S928USQS6DZF2-kdp.ko` | `6.1.145-android14-11-33419968-abS928USQS6DZF2` |
+
+Build the kernel module from a copy of the patched tree that has no `.git`
+directory (`rsync -a --exclude .git KernelSU/ buildsrc/`). `kernel/Kbuild`
+derives `KSU_VERSION = 30000 + git commit count` whenever it can resolve a
+repository root, and otherwise selects the fallback `KSU_VERSION=32525`. The
+fallback is what every published Samsung artifact above was built with, and it
+is the version code KernelSU Manager reports (`32525`, displayed as `32525-2`);
+a build from a live checkout selects the commit-count branch instead and
+produces a much larger version code.
 
 The exact container build used here was:
 
